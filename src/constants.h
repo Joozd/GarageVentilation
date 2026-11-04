@@ -9,10 +9,10 @@ namespace Constants {
 
     inline constexpr uint8_t FAN_OUTPUT_PIN = D8;
 
-    inline constexpr uint64_t DEEP_SLEEP_DURATION_MS = 1 /*60*/ * 10 /*60*/ * 1000ULL;  //TODO now 1 minute for dev, make this 60 minutes
-    inline constexpr uint64_t LIGHT_SLEEP_DURATION_MS = 1 /*20*/ * 10/*60*/ * 1000ULL; //TODO now 1 minute for dev, make this 20 minutes
+    inline constexpr uint64_t DEEP_SLEEP_DURATION_MS = 60 * 60  * 1000ULL;  // 60 minutes. See how this works in practice. Shorter intervals = more battery usage for ESP32, longer = miss some minutes of possible ventilation.
+    inline constexpr uint64_t LIGHT_SLEEP_DURATION_MS = 10 * 60 * 1000ULL;  // 10 minutes. See how this works in practice. Shorter interval = faster fan switching off (better battery life, stop faster when a rainshower hits), longer = lower battery usage for ESP.
 
-    inline constexpr uint32_t SCAN_TIMEOUT_MS = 15000;
+    inline constexpr uint32_t SCAN_TIMEOUT_MS = 15000; // How long to keep scanning for BLE devices before giving up.
 
 
 
