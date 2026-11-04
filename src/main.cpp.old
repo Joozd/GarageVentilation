@@ -1,0 +1,126 @@
+
+#include <Arduino.h>
+#include <format>
+#include "sensors/BleScanner.h"
+#include "sensors/RuuviDecoder.h"
+#include "sensors/SwitchbotDecoder.h"
+#include "sensors/AdvertisementClassifier.h"
+#include "Measurement.h"
+#include "utils/Humidity.h"
+#include "control/VentilationController.h"
+
+RuuviDecoder ruuviDecoder;
+SwitchbotDecoder switchbotDecoder;
+BleScanner scanner;
+AdvertisementClassifier classifier;
+
+constexpr uint32_t SCAN_TIMEOUT_MS = 15000;
+constexpr uint8_t FAN_OUTPUT_PIN = D2;
+
+/** Initializes serial output and BLE scanning. */
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+
+    pinMode(LED_BUILTIN,OUTPUT);
+    pinMode(FAN_OUTPUT_PIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
+
+    scanner.begin();
+}
+
+/** Prints a byte sequence as hexadecimal values. */
+void printHex(const std::vector<uint8_t>& data) {
+    for (uint8_t byte : data) {
+        Serial.printf("%02X", byte);
+    }
+}
+
+/** Scans and classifies nearby BLE advertisements. */
+
+
+
+/** Receives and processes advertisements for one scan cycle. */
+void loop() {
+    if (!scanner.start()) {
+        Serial.println("Failed to start BLE scan");
+        delay(5000);
+        return;
+    }
+
+    uint32_t startedAt = millis();
+    std::optional<Measurement> measurementInside;
+    std::optional<Measurement> measurementOutside;
+
+    digitalWrite(LED_BUILTIN, LOW);
+    while (!measurementInside || !measurementOutside) {
+        
+        uint32_t elapsed = millis() - startedAt;
+        if (elapsed >= SCAN_TIMEOUT_MS) break;
+
+        uint32_t remaining = SCAN_TIMEOUT_MS - elapsed;
+        auto advertisement = scanner.nextAdvertisement(remaining);
+        if (!advertisement) break;
+
+        switch (classifier.classify(*advertisement)) {
+            case AdvertisementType::Ruuvi: {
+                printf("Ruuvi found with signal strength: %d\n", advertisement->rssi);
+                measurementOutside = ruuviDecoder.decode(*advertisement);
+                break;
+            }
+
+            case AdvertisementType::SwitchBot: {
+                printf("SwitchBot found with signal strength: %d\n", advertisement->rssi);
+                measurementInside = switchbotDecoder.decode(*advertisement);
+                break;
+            }
+
+            case AdvertisementType::Unknown: {
+            // Serial.printf(
+            //     "%lu | Discarded advertisement from 0x%04X (rssi=%d)\n",
+            //     static_cast<unsigned long>(millis()),
+            //     advertisement->manufacturerId,
+            //     advertisement->rssi
+            // );
+            }
+        }        
+    }
+    digitalWrite(LED_BUILTIN, HIGH);
+    scanner.stop();
+
+    if (!measurementInside || !measurementOutside){ // TODO decide what we want with missing broadcast after timeout
+        printf("Timeout: inside found = %s, outside found = %s\n",
+            measurementInside ? "true" : "false",
+            measurementOutside ? "true" : "false"
+        );
+    }
+
+    //TODO remove debug console logging
+    else{        
+        Serial.printf(
+            "%lu |  Inside Temperature: %.2f C | Humidity: %.1f%% | Absolute Humidity: %.1fg/m³\n",
+            millis(),
+            measurementInside->temperatureC,
+            measurementInside->relativeHumidity * 100,
+            calculateAbsoluteHumidity(*measurementInside)
+        );
+
+        Serial.printf(
+            "%lu | Outside Temperature: %.2f C | Humidity: %.1f%% | Absolute Humidity: %.1fg/m³\n",
+            millis(),
+            measurementOutside->temperatureC,
+            measurementOutside->relativeHumidity * 100,
+            calculateAbsoluteHumidity(*measurementOutside)
+        );
+
+        bool fanOn = shouldVentilate(*measurementInside, *measurementOutside);
+        Serial.printf("Ventilation recommended: %s\n",
+            fanOn ? "true" : "false"
+        );
+        digitalWrite(FAN_OUTPUT_PIN, fanOn ? HIGH : LOW);
+    }
+
+    Serial.println(".-o=0=o-.\n");
+
+    delay(5000);
+}
